@@ -1,12 +1,13 @@
 """
-台股技術分析儀表板 v2 ── 完整仿照附圖版本
-依賴：pip install gradio yfinance plotly pandas numpy
-執行：python stock_dashboard_v2.py  →  http://localhost:7860
+台股技術分析儀表板 - Streamlit 版本
+依賴：pip install streamlit yfinance plotly pandas numpy
+執行：streamlit run streamlit_app.py
 """
 
 import warnings, math
 warnings.filterwarnings("ignore")
 
+import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -81,6 +82,7 @@ def _clean(df):
             df[c] = df[c].astype(float)
     return df.sort_values("Date").reset_index(drop=True)
 
+@st.cache_data(ttl=300, show_spinner=False)
 def fetch_all(ticker, days):
     end   = datetime.today()
     start = end - timedelta(days=max(int(days)+30, 220))
@@ -134,7 +136,7 @@ def board_ratio(df, n=5):
     ext = ((r["Close"] - r["Low"]) / (r["High"] - r["Low"] + 1e-9) * r["Volume"]).sum()
     tot = r["Volume"].sum()
     ep  = int(ext / tot * 100) if tot > 0 else 50
-    return 100 - ep, ep          # int_pct, ext_pct
+    return 100 - ep, ep
 
 def main_force(df, n=5):
     r   = df.tail(n)
@@ -215,7 +217,6 @@ def build_main(df, show_bb):
         vertical_spacing=0.01,
     )
 
-    # K 線
     fig.add_trace(go.Candlestick(
         x=df["Date"], open=df["Open"], high=df["High"],
         low=df["Low"], close=df["Close"], name="K線",
@@ -235,7 +236,6 @@ def build_main(df, show_bb):
             mode="lines", line=dict(color="rgba(160,80,255,.7)", width=1, dash="dot"),
             fill="tonexty", fillcolor="rgba(160,80,255,.06)"), row=1, col=1)
 
-    # 近高低標注
     hi_i = int(df["High"].idxmax())
     lo_i = int(df["Low"].idxmin())
     fig.add_annotation(
@@ -251,14 +251,12 @@ def build_main(df, show_bb):
         font=dict(color=GRN, size=9), bgcolor="rgba(0,200,100,.15)",
         bordercolor=GRN, borderwidth=1, row=1, col=1)
 
-    # 成交量
     bar_c = [RED if c >= o else GRN for c, o in zip(df["Close"], df["Open"])]
     fig.add_trace(go.Bar(x=df["Date"], y=df["Volume"], name="量",
         marker_color=bar_c, opacity=0.75), row=2, col=1)
     fig.add_trace(go.Scatter(x=df["Date"], y=df["Volume"].rolling(5).mean(),
         name="均量", mode="lines", line=dict(color=GOLD, width=1.1)), row=2, col=1)
 
-    # KD
     fig.add_trace(go.Scatter(x=df["Date"], y=df["K"], name="K",
         mode="lines", line=dict(color=GOLD, width=1.3)), row=3, col=1)
     fig.add_trace(go.Scatter(x=df["Date"], y=df["D"], name="D",
@@ -518,8 +516,6 @@ def html_key_levels(df, close):
     res2 = float(r60["High"].max())
     sup1 = float(r20["Low"].min())
     sup2 = float(r60["Low"].min())
-    d1   = (res1 - close) / close * 100
-    d2   = (close - sup1) / close * 100
 
     lvl_box = lambda label, val, col, bg, dist: (
         f'<div style="background:{bg};border-radius:4px;padding:6px 10px;margin:3px 0;'
@@ -596,12 +592,12 @@ def html_vol_price(df):
     vp   = ("量增價漲 ✓" if up and vr5>1 else "量縮價跌" if not up and vr5<1 else "量價背離 ⚠")
     vpc  = RED if "漲" in vp else (GRN if "跌" in vp else GOLD)
     return box("".join([
-        row("量價關係",   vp,                        vpc),
-        row("均量比(5日)", f"{vr5:.2f}x",  RED if vr5>1.2 else (GRN if vr5<0.8 else GOLD)),
-        row("均量比(20日)",f"{vr20:.2f}x", RED if vr20>1.2 else (GRN if vr20<0.8 else GOLD)),
-        row("距MA20",     f"{(cl-m20)/cl*100:+.1f}%" if m20 else "—",
+        row("量價關係",    vp,                         vpc),
+        row("均量比(5日)",  f"{vr5:.2f}x",  RED if vr5>1.2  else (GRN if vr5<0.8  else GOLD)),
+        row("均量比(20日)", f"{vr20:.2f}x", RED if vr20>1.2 else (GRN if vr20<0.8 else GOLD)),
+        row("距MA20",      f"{(cl-m20)/cl*100:+.1f}%" if m20 else "—",
             RED if cl > m20 else GRN),
-        row("距MA60",     f"{(cl-m60)/cl*100:+.1f}%" if m60 else "—",
+        row("距MA60",      f"{(cl-m60)/cl*100:+.1f}%" if m60 else "—",
             RED if cl > m60 else GRN),
     ]), "量價結構分析", "◈")
 
@@ -613,13 +609,13 @@ def html_chip(df, mf_status, chip_c, chip_s, mf_col):
     pos  = "多方主導" if cl > m20 > m60 else ("空方主導" if cl < m20 < m60 else "均線糾結")
     pc   = RED if "多" in pos else (GRN if "空" in pos else GOLD)
     return box("".join([
-        row("主力動向", mf_status,     mf_col),
-        row("籌碼集中度", f"{chip_c}", mf_col),
-        row("籌碼穩定度", f"{chip_s}", mf_col),
-        row("多空主導",   pos,         pc),
-        row("MA20站穩", "是 ✓" if cl > m20 else "否 ✗",
+        row("主力動向",   mf_status,     mf_col),
+        row("籌碼集中度", f"{chip_c}",   mf_col),
+        row("籌碼穩定度", f"{chip_s}",   mf_col),
+        row("多空主導",   pos,           pc),
+        row("MA20站穩",  "是 ✓" if cl > m20 else "否 ✗",
             RED if cl > m20 else GRN),
-        row("主力進出", "進出見買" if mf_status in ["進出見買","中性偏多"] else "進出見賣",
+        row("主力進出",  "進出見買" if mf_status in ["進出見買","中性偏多"] else "進出見賣",
             RED if mf_status in ["進出見買","中性偏多"] else GRN),
     ]), "籌碼結構分析", "◈")
 
@@ -665,10 +661,7 @@ def html_rsi_bar(rsi_val):
 def run(ticker_input, period_days, show_bb):
     ticker = ticker_input.strip()
     if not ticker:
-        empty = go.Figure()
-        return (empty, empty, empty,
-                f"<p style='color:{RED};'>請輸入股票代號</p>",
-                *[""] * 12)
+        return None, None, None, f"<p style='color:{RED};'>請輸入股票代號</p>", "", "", "", "", ""
 
     if "." not in ticker:
         ticker += ".TW"
@@ -676,20 +669,12 @@ def run(ticker_input, period_days, show_bb):
     daily, weekly, monthly = fetch_all(ticker, period_days)
 
     if daily is None or daily.empty:
-        empty = go.Figure()
-        return (empty, empty, empty,
-                f"<p style='color:{RED};'>❌ 無法取得 {ticker}，請確認代號或網路。</p>",
-                *[""] * 12)
+        return None, None, None, f"<p style='color:{RED};'>❌ 無法取得 {ticker}，請確認代號或網路。</p>", "", "", "", "", ""
 
-    # 裁切到請求天數
     daily = daily.tail(int(period_days)).reset_index(drop=True)
     if len(daily) < 3:
-        empty = go.Figure()
-        return (empty, empty, empty,
-                f"<p style='color:{RED};'>資料筆數不足，請增加查詢天數。</p>",
-                *[""] * 12)
+        return None, None, None, f"<p style='color:{RED};'>資料筆數不足，請增加查詢天數。</p>", "", "", "", "", ""
 
-    # 公司資訊
     try:
         info     = yf.Ticker(ticker).info
         name     = info.get("longName", info.get("shortName", ticker))
@@ -700,7 +685,6 @@ def run(ticker_input, period_days, show_bb):
     except Exception:
         name = ticker; sector = industry = "—"; pe = mktcap = None
 
-    # 最新值
     r, p  = daily.iloc[-1], daily.iloc[-2]
     s     = lambda x: float(x) if not (isinstance(x, float) and math.isnan(x)) else 0.0
     close = s(r["Close"]);  prev_c = s(p["Close"])
@@ -720,7 +704,6 @@ def run(ticker_input, period_days, show_bb):
     cc = RED if chg >= 0 else GRN
     sym = "▲" if chg >= 0 else "▼"
 
-    # 輔助分析
     ip, ep     = board_ratio(daily)
     iv, ev     = int(vol * ip / 100), int(vol * ep / 100)
     wr         = win_rate(daily)
@@ -728,13 +711,11 @@ def run(ticker_input, period_days, show_bb):
     kp         = kline_patterns(daily)
     cp         = chart_patterns(daily)
 
-    # ── 圖表 ────────────────────────────────────────────────────
     main_chart  = build_main(daily, show_bb)
     gauge_chart = build_gauge(wr)
     macd_chart  = build_macd(daily)
 
-    # ── 頂部標頭 ─────────────────────────────────────────────────
-    date_s = (r["Date"].strftime("%m/%d") if hasattr(r["Date"],"strftime") else str(r["Date"]))
+    date_s   = (r["Date"].strftime("%m/%d") if hasattr(r["Date"],"strftime") else str(r["Date"]))
     mktcap_s = f"{mktcap/1e8:,.0f} 億" if mktcap else "—"
     pe_s     = f"{pe:.1f}" if pe else "—"
 
@@ -760,14 +741,14 @@ def run(ticker_input, period_days, show_bb):
                    f'<div style="color:{MUTED};font-size:.6rem;">{lb}</div>'
                    f'<div style="color:{vc};font-size:.8rem;font-weight:700;">{vl}</div></div>'
                    for lb, vl, vc in [
-                       ("單量",       f"{vol//100:,}",  TEXT),
-                       ("成交量",     f"{vol:,}",       TEXT),
-                       ("日期",       date_s,           TEXT),
-                       ("市值",       mktcap_s,         TEXT),
-                       ("本益比",     pe_s,             TEXT),
-                       ("內盤",       f"{iv:,} ({ip}%)", GRN),
-                       ("外盤",       f"{ev:,} ({ep}%)", RED),
-                       ("內外盤比",   f"{ip}:{ep}",     CYAN),
+                       ("單量",     f"{vol//100:,}",   TEXT),
+                       ("成交量",   f"{vol:,}",         TEXT),
+                       ("日期",     date_s,             TEXT),
+                       ("市值",     mktcap_s,           TEXT),
+                       ("本益比",   pe_s,               TEXT),
+                       ("內盤",     f"{iv:,} ({ip}%)",  GRN),
+                       ("外盤",     f"{ev:,} ({ep}%)",  RED),
+                       ("內外盤比", f"{ip}:{ep}",       CYAN),
                    ])}
         </div>
       </div>
@@ -784,7 +765,6 @@ def run(ticker_input, period_days, show_bb):
       </div>
     </div>"""
 
-    # ── HTML 面板 ────────────────────────────────────────────────
     ohlcv_h  = html_ohlcv(daily)
     rsi_h    = html_rsi_bar(rv)
     tech_h   = html_tech(daily, ma5, ma20, ma60, kv, dv, rv, mv, sv, hv)
@@ -800,11 +780,10 @@ def run(ticker_input, period_days, show_bb):
     chip_h   = html_chip(daily, mf_stat, chip_c, chip_s, mf_col)
     day_h    = html_day_script(daily, close, atr_v)
 
-    # 各欄位組合
-    col_mid  = mf_h + gauge_l + levels_h
+    col_mid   = mf_h + gauge_l + levels_h
     col_right = tech_h + ind_h + comp_h + board_h
-    col_far  = vp_h + chip_h + day_h
-    bot_left = kline_h + multi_h
+    col_far   = vp_h + chip_h + day_h
+    bot_left  = kline_h + multi_h
     bot_ohlcv = ohlcv_h + rsi_h
 
     return (main_chart, gauge_chart, macd_chart,
@@ -812,115 +791,125 @@ def run(ticker_input, period_days, show_bb):
             bot_ohlcv, col_mid, col_right, col_far,
             bot_left)
 
-
 # ══════════════════════════════════════════════════════════════════
-#  Gradio UI
+#  Streamlit UI
 # ══════════════════════════════════════════════════════════════════
 
-CSS = f"""
-* {{ box-sizing: border-box; }}
-body, .gradio-container {{
-  background-color: {BG} !important;
-  color: {TEXT} !important;
-  font-family: Arial, 'Microsoft JhengHei', sans-serif;
-}}
-.gradio-container {{ max-width: 1600px !important; margin: 0 auto !important; padding: 0 10px !important; }}
-.gr-panel, .gr-box, .block {{ background: {PANEL} !important; border-color: {BORD} !important; }}
-.gr-textbox textarea, .gr-textbox input {{
-  background: {CARD} !important; border: 1px solid {BORD} !important;
-  color: #E0EAF4 !important; border-radius: 5px !important;
-}}
-label.svelte-1b6s6s {{ color: {MUTED} !important; font-size: .75rem !important; }}
-input[type=range] {{ accent-color: {CYAN}; }}
-footer {{ display: none !important; }}
-.gr-plot > div {{ padding: 0 !important; }}
-"""
+st.set_page_config(
+    page_title="台股技術分析儀表板",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 
-BANNER = f"""
+# 全域 CSS
+st.markdown(f"""
+<style>
+    html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {{
+        background-color: {BG} !important;
+        color: {TEXT} !important;
+        font-family: Arial, 'Microsoft JhengHei', sans-serif;
+    }}
+    [data-testid="stHeader"] {{ background-color: {BG} !important; }}
+    [data-testid="stSidebar"] {{ background-color: {PANEL} !important; }}
+    .stTextInput > div > input {{
+        background-color: {CARD} !important;
+        color: #E0EAF4 !important;
+        border-color: {BORD} !important;
+    }}
+    .stSlider label, .stCheckbox label, .stTextInput label {{
+        color: {MUTED} !important;
+        font-size: .78rem !important;
+    }}
+    .stButton > button {{
+        background-color: {CYAN} !important;
+        color: {BG} !important;
+        font-weight: 700 !important;
+        border: none !important;
+        border-radius: 5px !important;
+    }}
+    .stButton > button:hover {{
+        background-color: #00A0CC !important;
+    }}
+    footer, #MainMenu, header {{ visibility: hidden; display: none; }}
+    .block-container {{ padding-top: 1rem !important; }}
+</style>
+""", unsafe_allow_html=True)
+
+# Banner
+st.markdown(f"""
 <div style="background:linear-gradient(90deg,#05080F,#0C1828,#05080F);
-            border-bottom:2px solid {CYAN};padding:10px 16px;margin-bottom:8px;
+            border-bottom:2px solid {CYAN};padding:10px 16px;margin-bottom:12px;
             border-radius:8px;display:flex;align-items:center;gap:12px;">
   <span style="font-size:1.6rem;">📈</span>
   <div>
-    <h1 style="color:#E0EAF4;margin:0;font-size:1.1rem;font-weight:900;letter-spacing:1px;">
+    <div style="color:#E0EAF4;margin:0;font-size:1.1rem;font-weight:900;letter-spacing:1px;">
       台股技術分析儀表板
-    </h1>
-    <p style="color:{MUTED};margin:2px 0 0;font-size:.72rem;">
+    </div>
+    <div style="color:{MUTED};margin:2px 0 0;font-size:.72rem;">
       K線 · 均線 · KD · MACD · RSI · 布林通道 · 關鍵價位 · 籌碼 · 日操作劇本
-    </p>
+    </div>
   </div>
-</div>"""
+</div>""", unsafe_allow_html=True)
 
-with gr.Blocks(css=CSS, title="台股技術分析儀表板") as demo:
-    gr.HTML(BANNER)
+# 控制列
+c1, c2, c3, c4 = st.columns([3, 3, 2, 2])
+with c1:
+    ticker_in = st.text_input("股票代號", value="2330.TW",
+                               placeholder="2330 / 2330.TW / TSLA",
+                               help="台股加 .TW，如 2330.TW")
+with c2:
+    period_in = st.slider("查詢天數", min_value=30, max_value=365, value=90, step=15)
+with c3:
+    bb_in = st.checkbox("顯示布林通道", value=False)
+with c4:
+    st.write("")
+    st.write("")
+    btn = st.button("🔍 查詢分析", use_container_width=True)
 
-    # ── 控制列 ────────────────────────────────────────────────────
-    with gr.Row():
-        with gr.Column(scale=3, min_width=150):
-            ticker_in = gr.Textbox(
-                value="2330.TW", label="股票代號",
-                placeholder="2330 / 2330.TW / TSLA",
-                info="台股加 .TW，如 2330.TW",
-            )
-        with gr.Column(scale=3, min_width=180):
-            period_in = gr.Slider(
-                minimum=30, maximum=365, value=90, step=15, label="查詢天數"
-            )
-        with gr.Column(scale=2, min_width=130):
-            bb_in = gr.Checkbox(label="顯示布林通道", value=False)
-        with gr.Column(scale=2, min_width=110):
-            btn = gr.Button("🔍 查詢分析", variant="primary")
+# 執行分析（按下按鈕或初次載入）
+if ticker_in:
+    with st.spinner("資料載入中..."):
+        (main_chart, gauge_chart, macd_chart,
+         header_html,
+         ohlcv_h, mid_h, right_h, far_h,
+         bot_left_h) = run(ticker_in, period_in, bb_in)
 
-    # ── 頂部標頭 ──────────────────────────────────────────────────
-    header_out = gr.HTML()
+    # 頂部標頭
+    st.markdown(header_html, unsafe_allow_html=True)
 
-    # ── 主體四欄 ──────────────────────────────────────────────────
-    with gr.Row():
-        # 左欄：K線圖 + OHLCV
-        with gr.Column(scale=42):
-            main_chart_out = gr.Plot(show_label=False)
-            ohlcv_out      = gr.HTML()   # OHLCV + RSI bar
-            macd_chart_out = gr.Plot(show_label=False)
+    # 主體四欄
+    col1, col2, col3, col4 = st.columns([42, 20, 20, 20])
 
-        # 中欄：主力 + 勝率 + 關鍵價位
-        with gr.Column(scale=20):
-            mid_out    = gr.HTML()
-            gauge_out  = gr.Plot(show_label=False)
-            # (gauge label is inside mid_out)
+    with col1:
+        if main_chart:
+            st.plotly_chart(main_chart, use_container_width=True,
+                            config={"displayModeBar": False})
+        st.markdown(ohlcv_h, unsafe_allow_html=True)
+        if macd_chart:
+            st.plotly_chart(macd_chart, use_container_width=True,
+                            config={"displayModeBar": False})
 
-        # 中右欄：技術總覽 + 產業 + 公司 + 內外盤
-        with gr.Column(scale=20):
-            right_out = gr.HTML()
+    with col2:
+        st.markdown(mid_h, unsafe_allow_html=True)
+        if gauge_chart:
+            st.plotly_chart(gauge_chart, use_container_width=True,
+                            config={"displayModeBar": False})
 
-        # 右欄：量價 + 籌碼 + 日操作
-        with gr.Column(scale=20):
-            far_out = gr.HTML()
+    with col3:
+        st.markdown(right_h, unsafe_allow_html=True)
 
-    # ── 底部列：K線型態 ＋ 多週期分析 ────────────────────────────
-    with gr.Row():
-        bot_left_out = gr.HTML()
+    with col4:
+        st.markdown(far_h, unsafe_allow_html=True)
+
+    # 底部列
+    st.markdown(bot_left_h, unsafe_allow_html=True)
 
     # 免責聲明
-    gr.HTML(f"""
+    st.markdown(f"""
     <div style="background:{CARD};border:1px solid {BORD};border-radius:5px;
                 padding:6px 12px;margin-top:4px;text-align:center;">
       <span style="color:{MUTED};font-size:.7rem;">
         ⚠ 資料來源：Yahoo Finance｜本儀表板僅供學習與研究，不構成投資建議。投資有風險，操作請審慎。
       </span>
-    </div>""")
-
-    # ── 事件綁定 ──────────────────────────────────────────────────
-    outputs = [
-        main_chart_out, gauge_out, macd_chart_out,
-        header_out,
-        ohlcv_out, mid_out, right_out, far_out,
-        bot_left_out,
-    ]
-    btn.click(fn=run, inputs=[ticker_in, period_in, bb_in], outputs=outputs)
-    ticker_in.submit(fn=run, inputs=[ticker_in, period_in, bb_in], outputs=outputs)
-    demo.load(fn=run,  inputs=[ticker_in, period_in, bb_in], outputs=outputs)
-
-# ══════════════════════════════════════════════════════════════════
-if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860,
-                share=False, show_error=True)
+    </div>""", unsafe_allow_html=True)
