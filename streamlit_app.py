@@ -7,7 +7,6 @@
 import warnings, math
 warnings.filterwarnings("ignore")
 
-import gradio as gr
 import yfinance as yf
 import pandas as pd
 import numpy as np
